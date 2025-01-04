@@ -1,0 +1,389 @@
+<html>
+
+<head></head>
+
+<body>
+    <svg width="0" height="0" xmlns="http://www.w3.org/2000/svg">
+        <filter id="textureLineColorFilter">
+            <feColorMatrix type="matrix" values="
+                1 0 0 0 0
+                0 1 0 0 0
+                0 0 1 0 0
+                0 0 0 1 0
+            " id="textureLineColorFilterColorMatrix"></feColorMatrix>
+        </filter>
+    </svg>
+    <div class="mask"></div>
+</body>
+
+</html>
+
+<style type="text/css">
+    body {
+        overflow-x: hidden;
+        overflow-y: hidden;
+        padding: 0;
+        border: 0;
+        margin: 0;
+        background-color: black;
+    }
+    
+    .main-canvas {
+        z-index: 1;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        position: absolute;
+    }
+    
+    .dialog-canvas {
+        z-index: 114515;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .mask {
+        background-color: transparent;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 114514;
+    }
+</style>
+
+<script type="text/javascript">
+    root_ele = document.getRootNode();
+    html_ele = root_ele.children[0];
+    body_ele = html_ele.children[1];
+    canvas_ele = document.createElement("canvas");
+    canvas_ele.className = "main-canvas";
+    body_ele.appendChild(canvas_ele);
+    mask = document.querySelector(".mask");
+    ctx = canvas_ele.getContext("2d", {
+        willReadFrequently: true,
+        alpha: false
+    });
+    jscodes = new Array();
+    resize_task = false;
+    lfdaot_render_fcount = 0;
+    lowquality_scale = 1.0;
+    lowquality_imjscvscale_x = 1.0;
+    lowquality_imjs_maxsize = 256;
+    lfdaot_render_video_stop = false;
+    enable_jscanvas_bitmap = false;
+    const textureLineColorFilterColorMatrix = document.getElementById("textureLineColorFilterColorMatrix");
+    const lowquality_imweakmap = new WeakMap();
+    const letters = [
+        "a", "b", "c", "d", "e",
+        "f", "g", "h", "i", "j",
+        "k", "l", "m", "n", "o",
+        "p", "q", "r", "s", "t",
+        "u", "v", "w", "x", "y", "z",
+        "A", "B", "C", "D", "E",
+        "F", "G", "H", "I", "J",
+        "K", "L", "M", "N", "O",
+        "P", "Q", "R", "S", "T",
+        "U", "V", "W", "X", "Y", "Z"
+    ]
+
+    const None = undefined;
+    const True = true;
+    const False = false;
+    const inf = Infinity;
+    const nan = NaN;
+
+    function setTextureLineColorFilterColorMatrixValueByRgbValue(r, g, b) {
+        textureLineColorFilterColorMatrix.setAttribute("values", `${r} 0 0 0 0 0 ${g} 0 0 0 0 0 ${b} 0 0 0 0 0 1 0`);
+    }
+
+    function resizeCanvas(w, h) {
+        if (w === undefined || h === undefined) {
+            w = window.innerWidth;
+            h = window.innerHeight;
+        }
+
+        canvas_ele.width = w / lowquality_scale;
+        canvas_ele.height = h / lowquality_scale;
+        dialog_canvas_ele.width = w / lowquality_scale;
+        dialog_canvas_ele.height = h / lowquality_scale;
+        ctx.reset();
+        dialog_canvas_ctx.reset();
+        ctx.scale(1 / lowquality_scale, 1 / lowquality_scale);
+        dialog_canvas_ctx.scale(1 / lowquality_scale, 1 / lowquality_scale);
+        /*
+        in python, width and height is the real size of canvas, so we donot need to scale the canvas.
+        */
+        // ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    }
+
+    async function loadFont(family, url) {
+        let font = new FontFace(family, `url(${url})`);
+        document.fonts.add(await font.load());
+    }
+
+    async function loadrespackage(url, indexs) {
+        let respackage = await (await fetch(url)).blob();
+        let imnames = [];
+        for (i of indexs) {
+            let [pn, [pd, ps]] = i;
+            let resdata = respackage.slice(pd, pd + ps);
+            let im = new Image();
+            im.src = URL.createObjectURL(resdata);
+            im.loading = "eager";
+            imnames.push(pn);
+            window[`${pn}_img`] = im;
+        }
+        return imnames;
+    }
+
+    function r2eval(c) {
+        try {
+            return eval(c);
+        } catch (e) {
+            console.log({
+                code: c,
+                err: e
+            });
+            throw e;
+        }
+    }
+
+    function toLowQualityImage(im) {
+        if (lowquality_imweakmap.has(im)) return lowquality_imweakmap.get(im);
+
+        if (
+            lowquality_imjscvscale_x != 1.0
+            && im.width > lowquality_imjs_maxsize
+            && im.height > lowquality_imjs_maxsize
+            && !im._lowquality_pcsing
+        ) {
+            im._lowquality_pcsing = true;
+            (async () => {
+                let tempcv = document.createElement("canvas");
+                tempcv.width = Math.floor(im.width / lowquality_imjscvscale_x);
+                tempcv.height = Math.floor(im.height / lowquality_imjscvscale_x);
+                if (tempcv.width < 1 || tempcv.height < 1) {
+                    tempcv.width = im.width;
+                    tempcv.height = im.height;
+                }
+                tempctx = tempcv.getContext("2d").drawImage(im, 0, 0, tempcv.width, tempcv.height);
+                lowquality_imweakmap.set(
+                    im,
+                    enable_jscanvas_bitmap ? await createImageBitmap(tempcv) : tempcv
+                );
+                im._lowquality_pcsing = undefined;
+            })();
+        }
+        else if (enable_jscanvas_bitmap && !(im instanceof ImageBitmap) && !im._lowquality_pcsing) {
+            im._lowquality_pcsing = true;
+            (async () => {
+                let tempcv = document.createElement("canvas");
+                tempcv.width = im.width;
+                tempcv.height = im.height;
+                tempctx = tempcv.getContext("2d").drawImage(im, 0, 0, tempcv.width, tempcv.height);
+                lowquality_imweakmap.set(im, await createImageBitmap(tempcv));
+                im._lowquality_pcsing = undefined;
+            })();
+        }
+
+        return im;
+    }
+
+    CanvasRenderingContext2D.prototype._drawImage = CanvasRenderingContext2D.prototype.drawImage;
+
+    CanvasRenderingContext2D.prototype.drawImage = function(...args) {
+        args[0] = toLowQualityImage(args[0]);
+        if (!this.globalAlpha) return;
+        return this._drawImage(...args);
+    }
+
+    CanvasRenderingContext2D.prototype.drawRotateImage = function(im, x, y, width, height, deg, alpha) { // draw at the position center
+        this.save();
+        this.globalAlpha *= alpha;
+        if (!!deg) {
+            this.translate(x, y);
+            this.rotate(deg * Math.PI / 180);
+            this.drawImage(im, -width / 2, -height / 2, width, height);
+        } else {
+            this.drawImage(im, x - width / 2, y - height / 2, width, height);
+        }
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawAnchorESRotateImage = function(im, x, y, width, height, deg, alpha) {
+        this.save();
+        this.globalAlpha *= alpha;
+        if (!!deg) {
+            this.translate(x, y);
+            this.rotate(deg * Math.PI / 180);
+            this.drawImage(im, -width / 2, -height, width, height);
+        } else {
+            this.drawImage(im, x - width / 2, y - height, width, height);
+        }
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawScaleImage = function(im, x, y, width, height, xs, ys) {
+        x += width / 2; y += height / 2;
+        this.save();
+        this.translate(x, y);
+        this.scale(xs, ys);
+        this.drawImage(im, -width / 2, -height / 2, width, height);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawRotateText = function(text, x, y, deg, fontsize, color, xscale, yscale) {
+        this.save();
+        this.translate(x, y);
+        this.rotate(deg * Math.PI / 180);
+        this.scale(xscale, yscale);
+        this.fillStyle = color;
+        this.textAlign = "center";
+        this.textBaseline = "middle";
+        this.font = `${fontsize}px PhigrosFont`;
+        this.fillText(text, 0, 0);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawAlphaImage = function(im, x, y, width, height, alpha) {
+        this.save()
+        this.globalAlpha *= alpha;
+        this.drawImage(im, x, y, width, height);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawTextEx = function(text, x, y, font, color, align, baseline) {
+        this.save();
+        this.fillStyle = color;
+        this.textAlign = align;
+        this.textBaseline = baseline;
+        this.font = font;
+        this.fillText(text, x, y);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.fillRectEx = function(x, y, w, h, color) {
+        this.save();
+        this.fillStyle = color;
+        this.fillRect(x, y, w, h);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.fillRectExByRect = function(x0, y0, x1, y1, color) {
+        return this.fillRectEx(x0, y0, x1 - x0, y1 - y0, color);
+    }
+
+    CanvasRenderingContext2D.prototype.strokeRectEx = function(x, y, w, h, color, width) {
+        this.save();
+        this.strokeStyle = color;
+        this.lineWidth = width;
+        this.strokeRect(x, y, w, h);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.addRoundRectData = function(x, y, w, h, r) {
+        if (this._roundDatas == undefined) this._roundDatas = [];
+        this._roundDatas.push({ x: x, y: y, w: w, h: h, r: r });
+    }
+
+    CanvasRenderingContext2D.prototype.drawRoundDatas = function(color) {
+        if (this._roundDatas) {
+            this.roundRectsEx(color, this._roundDatas);
+            this._roundDatas = undefined;
+        }
+    }
+
+    CanvasRenderingContext2D.prototype.roundRectsEx = function(color, datas) {
+        this.save();
+        this.fillStyle = color;
+        this.beginPath();
+        for (let i of datas) {
+            this.roundRect(i.x, i.y, i.w, i.h, i.r);
+        }
+        this.fill();
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawLineEx = function(x1, y1, x2, y2, width, color) {
+        this.save();
+        this.strokeStyle = color;
+        this.lineWidth = width;
+        this.beginPath();
+        this.moveTo(x1, y1);
+        this.lineTo(x2, y2);
+        this.stroke();
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.clipRect = function(x0, y0, x1, y1) {
+        this.beginPath();
+        this.rect(x0, y0, x1 - x0, y1 - y0);
+        this.clip();
+    }
+
+    CanvasRenderingContext2D.prototype.drawRotateText2 = function(text, x, y, deg, color, font, align, baseline) {
+        this.save();
+        this.translate(x, y);
+        this.rotate(deg * Math.PI / 180);
+        this.fillStyle = color;
+        this.textAlign = align;
+        this.textBaseline = baseline;
+        this.font = font;
+        this.fillText(text, 0, 0);
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawTriangleFrame = function(x0, y0, x1, y1, x2, y2, color, width) {
+        this.save();
+        this.strokeStyle = color;
+        this.lineWidth = width;
+        this.beginPath();
+        this.moveTo(x0, y0);
+        this.lineTo(x1, y1);
+        this.lineTo(x2, y2);
+        this.closePath();
+        this.stroke();
+        this.restore();
+    }
+
+    CanvasRenderingContext2D.prototype.drawUIItems = function(datas) {
+        for (let i of datas) {
+            if (i == null) continue;
+
+            if (i.type == "text") {
+                this.save();
+                this.font = `${i.fontsize}px PhigrosFont`;
+                this.textBaseline = i.textBaseline;
+                this.textAlign = i.textAlign;
+                this.fillStyle = i.color;
+                this.translate(i.x + i.dx, i.y + i.dy);
+                if (i.sx != 1.0 || i.sy != 1.0) this.scale(i.sx, i.sy);
+                if (i.rotate != 0.0) this.rotate(i.rotate * Math.PI / 180);
+                this.fillText(i.text, 0, 0);
+                this.restore();
+            }
+            else if (i.type == "image") {
+                this.save();
+                let img = eval(i.image);
+                this.translate(i.x + i.dx + i.width / 2, i.y + i.dy + i.height / 2);
+                if (i.rotate != 0.0) this.rotate(i.rotate * Math.PI / 180);
+                if (i.alpha != 1.0) this.globalAlpha = i.alpha;
+                this.drawImage(img, -i.width / 2, -i.height / 2, i.width, i.height);
+                this.restore();
+            }
+            else if (i.type == "call") {
+                this[i.name](...i.args);
+            }
+        }
+    }
+
+    CanvasRenderingContext2D.prototype.clear = function() {
+        this.clearRect(0, 0, this.canvas.width * lowquality_scale, this.canvas.height * lowquality_scale);
+    }
+</script>
